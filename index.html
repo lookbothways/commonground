@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Common Ground — where the papers overlap</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400;1,6..72,500&family=Spline+Sans+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* ---------- design tokens ---------- */
+  :root{
+    --paper:#e9e8e2;          /* cool newsprint base */
+    --card:#f4f3ee;
+    --ink:#1b1a17;
+    --ink-soft:#57544c;
+    --line:#cfcdc4;
+    --line-soft:#dedcd4;
+
+    /* political-lean spectrum: cool(left) -> warm(right) */
+    --guardian:#2f5e8c;       /* left        */
+    --ap:#4f7a5e;             /* centre      */
+    --wsj:#b07a2e;            /* centre-right*/
+    --telegraph:#a24b3c;      /* right       */
+
+    --spectrum: linear-gradient(90deg,
+       var(--guardian) 0%, #446f77 30%,
+       var(--ap) 46%, #8a7a45 62%,
+       var(--wsj) 74%, var(--telegraph) 100%);
+
+    --serif:"Newsreader", Georgia, serif;
+    --mono:"Spline Sans Mono", ui-monospace, monospace;
+  }
+
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:var(--serif);
+    font-optical-sizing:auto;
+    line-height:1.35;
+    padding:0 clamp(16px,4vw,48px);
+  }
+  a{color:inherit}
+
+  .wrap{max-width:940px; margin:0 auto; padding-bottom:96px}
+
+  /* ---------- masthead ---------- */
+  header{padding:clamp(28px,6vw,60px) 0 22px}
+  .eyebrow{
+    font-family:var(--mono); font-size:11px; letter-spacing:.22em;
+    text-transform:uppercase; color:var(--ink-soft); margin:0 0 14px;
+  }
+  h1{
+    font-family:var(--serif); font-weight:500;
+    font-size:clamp(34px,7vw,60px); line-height:1.02;
+    letter-spacing:-.01em; margin:0 0 12px;
+  }
+  h1 em{font-style:italic; font-weight:400}
+  .lede{
+    font-size:clamp(15px,2.3vw,18px); color:var(--ink-soft);
+    max-width:56ch; margin:0 0 26px;
+  }
+
+  /* ---------- spectrum legend ---------- */
+  .legend{margin:0 0 30px}
+  .legend-bar{
+    height:6px; border-radius:3px; background:var(--spectrum);
+    position:relative; margin:0 0 30px;
+  }
+  .legend-ticks{position:relative; height:34px}
+  .tick{
+    position:absolute; top:0; transform:translateX(-50%);
+    text-align:center; white-space:nowrap;
+  }
+  .tick .dot{
+    width:9px;height:9px;border-radius:50%; margin:0 auto 6px;
+    outline:3px solid var(--paper);
+  }
+  .tick .name{
+    font-family:var(--mono); font-size:11px; letter-spacing:.02em;
+    color:var(--ink-soft);
+  }
+
+  /* ---------- controls ---------- */
+  .controls{
+    display:flex; flex-wrap:wrap; align-items:center; gap:16px 20px;
+    padding:16px 0; border-top:1px solid var(--line);
+    border-bottom:1px solid var(--line);
+  }
+  button.refresh{
+    font-family:var(--mono); font-size:13px; letter-spacing:.04em;
+    background:var(--ink); color:var(--paper); border:none;
+    padding:11px 20px; border-radius:2px; cursor:pointer;
+    display:inline-flex; align-items:center; gap:10px;
+    transition:opacity .15s ease, transform .05s ease;
+  }
+  button.refresh:hover{opacity:.86}
+  button.refresh:active{transform:translateY(1px)}
+  button.refresh:disabled{cursor:progress; opacity:.55}
+  button.refresh .spin{
+    width:12px;height:12px;border-radius:50%;
+    border:2px solid var(--paper); border-top-color:transparent;
+    display:none;
+  }
+  body.loading button.refresh .spin{display:inline-block; animation:spin .7s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  .opt{font-family:var(--mono); font-size:12px; color:var(--ink-soft);
+       display:inline-flex; align-items:center; gap:8px; cursor:pointer; user-select:none}
+  .opt input{accent-color:var(--ink); width:15px; height:15px}
+
+  .status{
+    font-family:var(--mono); font-size:11.5px; color:var(--ink-soft);
+    margin-left:auto; display:flex; gap:14px; flex-wrap:wrap;
+  }
+  .status .s{display:inline-flex; align-items:center; gap:6px}
+  .status .s b{width:7px;height:7px;border-radius:50%;background:var(--line)}
+  .status .s.ok b{background:var(--ap)}
+  .status .s.fail b{background:var(--telegraph)}
+
+  /* ---------- results meta ---------- */
+  .meta{
+    font-family:var(--mono); font-size:11.5px; letter-spacing:.04em;
+    text-transform:uppercase; color:var(--ink-soft);
+    margin:34px 0 4px; display:flex; justify-content:space-between; align-items:baseline;
+  }
+
+  /* ---------- cluster cards ---------- */
+  .cluster{
+    background:var(--card); border:1px solid var(--line-soft);
+    border-radius:4px; padding:22px 24px 8px; margin:18px 0;
+  }
+  .c-top{
+    display:flex; justify-content:space-between; align-items:flex-start;
+    gap:20px; margin-bottom:14px;
+  }
+  .keywords{display:flex; flex-wrap:wrap; gap:6px}
+  .kw{
+    font-family:var(--mono); font-size:11px; letter-spacing:.02em;
+    color:var(--ink-soft); border:1px solid var(--line);
+    padding:3px 9px; border-radius:12px; background:var(--paper);
+  }
+  /* mini spectrum showing which papers cover this story */
+  .mini{width:118px; flex:none; padding-top:3px}
+  .mini-bar{height:4px; border-radius:2px; background:var(--spectrum); opacity:.28; position:relative}
+  .mini-bar .m-dot{
+    position:absolute; top:50%; width:9px; height:9px; border-radius:50%;
+    transform:translate(-50%,-50%); outline:2px solid var(--card);
+  }
+  .mini-count{font-family:var(--mono); font-size:10px; color:var(--ink-soft);
+              text-align:right; margin-top:6px; letter-spacing:.03em}
+
+  .c-title{
+    font-size:clamp(20px,3.2vw,26px); font-weight:500; line-height:1.14;
+    letter-spacing:-.01em; margin:0 0 4px; text-wrap:balance;
+  }
+  .c-title a{text-decoration:none; border-bottom:2px solid transparent}
+  .c-title a:hover{border-bottom-color:var(--guardian)}
+  .c-anchor{
+    font-family:var(--mono); font-size:10.5px; letter-spacing:.1em;
+    text-transform:uppercase; color:var(--ink-soft); margin:0 0 14px;
+  }
+
+  ul.links{list-style:none; margin:6px 0 14px; padding:0}
+  ul.links li{
+    padding:8px 0 8px 16px; border-left:3px solid var(--src, var(--line));
+    margin:0 0 2px;
+  }
+  ul.links li .src{
+    font-family:var(--mono); font-size:10px; letter-spacing:.08em;
+    text-transform:uppercase; color:var(--src); display:block; margin-bottom:2px;
+  }
+  ul.links li a{
+    font-size:17px; line-height:1.28; text-decoration:none;
+    border-bottom:1px solid transparent;
+  }
+  ul.links li a:hover{border-bottom-color:currentColor}
+
+  /* ---------- empty / error ---------- */
+  .note{
+    font-size:16px; color:var(--ink-soft); background:var(--card);
+    border:1px dashed var(--line); border-radius:4px;
+    padding:26px 28px; margin:22px 0;
+  }
+  .note b{color:var(--ink); font-weight:600}
+  .note code{font-family:var(--mono); font-size:13px; background:var(--paper);
+             padding:1px 5px; border-radius:3px}
+
+  footer{
+    font-family:var(--mono); font-size:11px; color:var(--ink-soft);
+    letter-spacing:.03em; margin-top:40px; padding-top:18px;
+    border-top:1px solid var(--line); line-height:1.7;
+  }
+  footer a{color:var(--guardian)}
+
+  /* reveal animation */
+  .cluster{opacity:0; transform:translateY(8px); animation:rise .4s ease forwards}
+  @keyframes rise{to{opacity:1; transform:none}}
+
+  @media (max-width:560px){
+    .mini{width:88px}
+    .status{width:100%; margin-left:0}
+    .c-top{flex-direction:column-reverse; align-items:stretch}
+    .mini{width:100%}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{animation:none !important; transition:none !important}
+  }
+  :focus-visible{outline:2px solid var(--guardian); outline-offset:2px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <p class="eyebrow">Front-page overlap monitor</p>
+    <h1>Common <em>Ground</em></h1>
+    <p class="lede">The stories the Guardian, AP, the Telegraph and the Wall Street Journal are all running right now — grouped by the words their headlines share, so you can see the same event told from left to right.</p>
+
+    <div class="legend">
+      <div class="legend-bar"></div>
+      <div class="legend-ticks" id="legendTicks"></div>
+    </div>
+
+    <div class="controls">
+      <button class="refresh" id="refreshBtn">
+        <span class="spin"></span><span class="btn-label">Refresh front pages</span>
+      </button>
+      <label class="opt">
+        <input type="checkbox" id="guardianOnly">
+        Guardian stories only
+      </label>
+      <div class="status" id="status"></div>
+    </div>
+  </header>
+
+  <main id="results"></main>
+
+  <footer>
+    Headlines pulled live from each paper's RSS feed via a public CORS proxy · clustering is naive (shared significant words) so expect the odd loose match ·
+    edit the <code>SOURCES</code> and <code>PROXIES</code> blocks in this file to swap feeds or proxies.
+    <br>Not affiliated with any of these publishers. All links go to the original articles.
+  </footer>
+</div>
+
+<script>
+/* ============================================================
+   CONFIG — safe to edit
+   ============================================================ */
+
+// Public CORS proxies, tried in order until one works.
+// Browsers can't fetch news RSS directly (no CORS headers), so we
+// route through a proxy. If both start failing, drop in another here.
+const PROXIES = [
+  url => "https://api.allorigins.win/raw?url=" + encodeURIComponent(url),
+  url => "https://corsproxy.io/?url=" + encodeURIComponent(url),
+];
+
+// lean: 0 = far left, 1 = far right (used for spectrum dot positions).
+// anchor:true is the paper used to title each cluster (the Guardian).
+const SOURCES = [
+  { id:"guardian",  name:"The Guardian", short:"Guardian",  lean:0.06, color:"var(--guardian)",  anchor:true,
+    feeds:["https://www.theguardian.com/uk/rss"] },
+  { id:"ap",        name:"AP",           short:"AP",        lean:0.46, color:"var(--ap)",        google:true,
+    // AP dropped native RSS, so we borrow Google News scoped to apnews.com
+    feeds:["https://news.google.com/rss/search?q=site:apnews.com when:1d&hl=en-GB&gl=GB&ceid=GB:en"] },
+  { id:"wsj",       name:"The Wall Street Journal", short:"WSJ", lean:0.78, color:"var(--wsj)",
+    feeds:["https://feeds.a.dj.com/rss/RSSWorldNews.xml","https://feeds.a.dj.com/rss/WSJcomUSBusiness.xml"] },
+  { id:"telegraph", name:"The Telegraph", short:"Telegraph", lean:1.0, color:"var(--telegraph)",
+    feeds:["https://www.telegraph.co.uk/rss.xml"] },
+];
+
+const MAX_CLUSTERS = 40;
+
+/* ============================================================
+   WORD HANDLING
+   ============================================================ */
+const STOP = new Set(("a an the and or but of in on at to for from by with as is are was were be been being " +
+  "it its this that these those he she they them his her their our your you we i me my will would could should " +
+  "can may might must not no nor so than then there here what which who whom whose when where why how all any " +
+  "each few more most other some such only own same too very just about into over under after before between " +
+  "up down out off again further once new news says say said latest live update updates video watch first amid " +
+  "reveals reveal warns warn plan plans set get got make made back way day days year years time week weeks " +
+  "uk us usa eu world today morning tonight report reports amid could reveals how why what latest breaking " +
+  "one two three million billion per cent amid vs top " +
+  // common headline verbs/fillers that otherwise link unrelated stories
+  "hold holds held call calls called rise rises rose resume resumes surge surges " +
+  "mount mounts face faces hit hits push pushes move moves urge urges seek seeks " +
+  "keep keeps take takes tell tells show shows want wants need needs look looks " +
+  "come comes give gives leave leaves meet meets agree agrees claim claims slam slams " +
+  "eye eyes back backs boost boosts spark sparks demand demands raise raises fall falls " +
+  "win wins lose loses beat beats defend defends launch launches unveil unveils " +
+  "start starts end ends open opens close closes name names call ").split(/\s+/).filter(Boolean));
+
+function tokenize(title){
+  return title.toLowerCase()
+    .replace(/[\u2019']s\b/g,"")            // strip possessive 's
+    .replace(/[^a-z0-9\s-]/g," ")
+    .replace(/-/g," ")
+    .split(/\s+/)
+    .map(w=>w.trim())
+    .filter(w=>w.length>=3 && !STOP.has(w) && !/^\d+$/.test(w))
+    .map(w=> (w.length>4 && w.endsWith("s") && !w.endsWith("ss")) ? w.slice(0,-1) : w);
+}
+
+/* ============================================================
+   FETCH + PARSE
+   ============================================================ */
+async function fetchText(url){
+  let lastErr;
+  for(const wrap of PROXIES){
+    try{
+      const res = await fetch(wrap(url), {cache:"no-store"});
+      if(!res.ok) throw new Error("HTTP "+res.status);
+      const txt = await res.text();
+      if(txt && txt.length > 200) return txt;
+      throw new Error("empty");
+    }catch(e){ lastErr = e; }
+  }
+  throw lastErr || new Error("all proxies failed");
+}
+
+function parseFeed(xmlText){
+  let doc = new DOMParser().parseFromString(xmlText, "application/xml");
+  if(doc.querySelector("parsererror")){
+    doc = new DOMParser().parseFromString(xmlText, "text/html");
+  }
+  const items = [...doc.querySelectorAll("item, entry")];
+  return items.map(it=>{
+    const title = (it.querySelector("title")?.textContent || "").trim();
+    const linkEl = it.querySelector("link");
+    let link = linkEl?.getAttribute("href") || linkEl?.textContent || "";
+    link = link.trim();
+    return {title, link};
+  }).filter(x=>x.title && x.link);
+}
+
+// Google News wraps titles as "Headline - Publisher"; trim that tail.
+function cleanTitle(t, src){
+  if(src.google) t = t.replace(/\s+[-–—]\s+[^-–—]+$/,"").trim();
+  return t;
+}
+
+async function loadSource(src){
+  const seen = new Set();
+  const out = [];
+  for(const feed of src.feeds){
+    try{
+      const items = parseFeed(await fetchText(feed));
+      for(const it of items){
+        const title = cleanTitle(it.title, src);
+        if(!title || seen.has(it.link)) continue;
+        seen.add(it.link);
+        out.push({ title, link:it.link, source:src.id, tokens:new Set(tokenize(title)) });
+      }
+    }catch(e){ /* try remaining feeds for this source */ }
+  }
+  return out;
+}
+
+/* ============================================================
+   CLUSTERING — group articles that share significant words
+   ============================================================ */
+function cluster(articles){
+  const N = articles.length;
+  if(!N) return [];
+
+  // document frequency, to drop words that are too common to be meaningful
+  const df = new Map();
+  articles.forEach(a=>{ new Set(a.tokens).forEach(t=> df.set(t,(df.get(t)||0)+1)); });
+  const commonCut = Math.max(3, Math.floor(N*0.5));
+
+  // keyword -> set of article indices (only "significant" keywords)
+  const kw2arts = new Map();
+  articles.forEach((a,i)=>{
+    a.tokens.forEach(t=>{
+      if(df.get(t) > commonCut) return;
+      if(!kw2arts.has(t)) kw2arts.set(t, new Set());
+      kw2arts.get(t).add(i);
+    });
+  });
+
+  const srcOf = i => articles[i].source;
+  const spanSources = set => new Set([...set].map(srcOf)).size;
+
+  // candidate keywords: shared by >=2 articles spanning >=2 papers
+  let cands = [...kw2arts.entries()]
+    .map(([kw,set])=>({kw, set}))
+    .filter(c => c.set.size>=2 && spanSources(c.set)>=2)
+    .sort((a,b)=> spanSources(b.set)-spanSources(a.set)
+                || b.set.size-a.set.size
+                || a.kw.localeCompare(b.kw));
+
+  // greedily build clusters, merging candidates whose article sets overlap heavily
+  const clusters = [];
+  const jaccard = (A,B)=>{ let inter=0; A.forEach(x=>{ if(B.has(x)) inter++; });
+                           return inter/(A.size+B.size-inter); };
+
+  for(const c of cands){
+    let host = null;
+    for(const cl of clusters){
+      const isSub = [...c.set].every(x=>cl.arts.has(x));
+      if(isSub || jaccard(c.set, cl.arts) >= 0.45){ host = cl; break; }
+    }
+    if(host){
+      c.set.forEach(x=>host.arts.add(x));
+      host.keywords.push(c.kw);
+    }else{
+      clusters.push({ arts:new Set(c.set), keywords:[c.kw] });
+    }
+  }
+
+  // finalise: dedup, require >=2 papers, attach display data
+  const finished = clusters.map(cl=>{
+    const arts = [...cl.arts].map(i=>articles[i]);
+    const sources = new Set(arts.map(a=>a.source));
+    return { articles:arts, sources, keywords:cl.keywords };
+  }).filter(cl => cl.sources.size >= 2);
+
+  // sort: widest spread first, then most articles
+  finished.sort((a,b)=> b.sources.size-a.sources.size || b.articles.length-a.articles.length);
+  return finished.slice(0, MAX_CLUSTERS);
+}
+
+/* ============================================================
+   RENDER
+   ============================================================ */
+const srcById = Object.fromEntries(SOURCES.map(s=>[s.id,s]));
+const orderIndex = Object.fromEntries(SOURCES.map((s,i)=>[s.id,i]));
+
+function buildLegend(){
+  const el = document.getElementById("legendTicks");
+  el.innerHTML = SOURCES.map(s=>`
+    <div class="tick" style="left:${s.lean*100}%">
+      <div class="dot" style="background:${s.color}"></div>
+      <div class="name">${s.short}</div>
+    </div>`).join("");
+}
+
+function anchorHeadline(cl){
+  const anchorSrc = SOURCES.find(s=>s.anchor)?.id;
+  const anchors = cl.articles.filter(a=>a.source===anchorSrc);
+  if(anchors.length){
+    // pick the anchor article richest in this cluster's keywords
+    const kws = new Set(cl.keywords);
+    anchors.sort((a,b)=> [...b.tokens].filter(t=>kws.has(t)).length
+                       - [...a.tokens].filter(t=>kws.has(t)).length
+                       || b.title.length-a.title.length);
+    return { article:anchors[0], fromAnchor:true };
+  }
+  // fallback: most keyword-central headline
+  const kws = new Set(cl.keywords);
+  const best = [...cl.articles].sort((a,b)=>
+    [...b.tokens].filter(t=>kws.has(t)).length - [...a.tokens].filter(t=>kws.has(t)).length
+    || b.title.length-a.title.length)[0];
+  return { article:best, fromAnchor:false };
+}
+
+function renderCluster(cl, i){
+  const {article:head, fromAnchor} = anchorHeadline(cl);
+
+  const miniDots = [...cl.sources].map(id=>{
+    const s = srcById[id];
+    return `<span class="m-dot" style="left:${s.lean*100}%; background:${s.color}"></span>`;
+  }).join("");
+
+  const kwHtml = cl.keywords.slice(0,5)
+    .map(k=>`<span class="kw">${k}</span>`).join("");
+
+  const links = [...cl.articles]
+    .sort((a,b)=> (orderIndex[a.source]-orderIndex[b.source]) || a.title.localeCompare(b.title))
+    .map(a=>{
+      const s = srcById[a.source];
+      return `<li style="--src:${s.color}">
+        <span class="src">${s.short}</span>
+        <a href="${a.link}" target="_blank" rel="noopener">${escapeHtml(a.title)}</a>
+      </li>`;
+    }).join("");
+
+  const anchorLine = fromAnchor
+    ? `Anchored on the Guardian headline`
+    : `The Guardian isn't running this one — titled by ${srcById[head.source].short}`;
+
+  return `
+    <article class="cluster" style="animation-delay:${Math.min(i*40,320)}ms">
+      <div class="c-top">
+        <div class="keywords">${kwHtml}</div>
+        <div class="mini">
+          <div class="mini-bar">${miniDots}</div>
+          <div class="mini-count">${cl.sources.size} papers · ${cl.articles.length} stories</div>
+        </div>
+      </div>
+      <h2 class="c-title"><a href="${head.link}" target="_blank" rel="noopener">${escapeHtml(head.title)}</a></h2>
+      <p class="c-anchor">${anchorLine}</p>
+      <ul class="links">${links}</ul>
+    </article>`;
+}
+
+function escapeHtml(s){
+  return s.replace(/[&<>"']/g, c=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+}
+
+function renderStatus(results){
+  document.getElementById("status").innerHTML = SOURCES.map(s=>{
+    const r = results[s.id];
+    const cls = r.ok ? 
