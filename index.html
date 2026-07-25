@@ -264,11 +264,12 @@ const SOURCES = [
     feeds:["https://www.theguardian.com/uk/rss"] },
   { id:"ap",        name:"AP",           short:"AP",        lean:0.46, color:"var(--ap)",        google:true,
     // AP dropped native RSS, so we borrow Google News scoped to apnews.com
-    feeds:["https://news.google.com/rss/search?q=site:apnews.com when:1d&hl=en-GB&gl=GB&ceid=GB:en"] },
+    feeds:["https://news.google.com/rss/search?q=site:apnews.com&hl=en-GB&gl=GB&ceid=GB:en"] },
   { id:"wsj",       name:"The Wall Street Journal", short:"WSJ", lean:0.78, color:"var(--wsj)",
     feeds:["https://feeds.a.dj.com/rss/RSSWorldNews.xml","https://feeds.a.dj.com/rss/WSJcomUSBusiness.xml"] },
-  { id:"telegraph", name:"The Telegraph", short:"Telegraph", lean:1.0, color:"var(--telegraph)",
-    feeds:["https://www.telegraph.co.uk/rss.xml"] },
+  { id:"telegraph", name:"The Telegraph", short:"Telegraph", lean:1.0, color:"var(--telegraph)", google:true,
+    // Telegraph's own feed is Cloudflare-protected and blocks proxies, so route via Google News
+    feeds:["https://news.google.com/rss/search?q=site:telegraph.co.uk&hl=en-GB&gl=GB&ceid=GB:en"] },
 ];
 
 const MAX_CLUSTERS = 40;
@@ -291,7 +292,12 @@ const STOP = new Set(("a an the and or but of in on at to for from by with as is
   "come comes give gives leave leaves meet meets agree agrees claim claims slam slams " +
   "eye eyes back backs boost boosts spark sparks demand demands raise raises fall falls " +
   "win wins lose loses beat beats defend defends launch launches unveil unveils " +
-  "start starts end ends open opens close closes name names call ").split(/\s+/).filter(Boolean));
+  "start starts end ends open opens close closes name names call " +
+  // connectives, quantifiers and fillers that create junk matches
+  "despite everything everyone anything nothing something someone another whether " +
+  "though although because during without within around across among toward towards " +
+  "behind beyond since until while also even including include includes become becomes " +
+  "became having doing going getting saying making coming still much many several various ").split(/\s+/).filter(Boolean));
 
 function tokenize(title){
   return title.toLowerCase()
@@ -485,10 +491,10 @@ function renderCluster(cl, i){
     const s = srcById[id];
     return `<span class="m-dot" style="left:${s.lean*100}%; background:${s.color}"></span>`;
   }).join("");
-
+ 
   const kwHtml = cl.keywords.slice(0,5)
     .map(k=>`<span class="kw">${k}</span>`).join("");
-
+ 
   const links = [...cl.articles]
     .sort((a,b)=> (orderIndex[a.source]-orderIndex[b.source]) || a.title.localeCompare(b.title))
     .map(a=>{
@@ -498,11 +504,11 @@ function renderCluster(cl, i){
         <a href="${a.link}" target="_blank" rel="noopener">${escapeHtml(a.title)}</a>
       </li>`;
     }).join("");
-
+ 
   const anchorLine = fromAnchor
     ? `Anchored on the Guardian headline`
     : `The Guardian isn't running this one — titled by ${srcById[head.source].short}`;
-
+ 
   return `
     <article class="cluster" style="animation-delay:${Math.min(i*40,320)}ms">
       <div class="c-top">
@@ -517,11 +523,11 @@ function renderCluster(cl, i){
       <ul class="links">${links}</ul>
     </article>`;
 }
-
+ 
 function escapeHtml(s){
   return s.replace(/[&<>"']/g, c=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
 }
-
+ 
 function renderStatus(results){
   document.getElementById("status").innerHTML = SOURCES.map(s=>{
     const r = results[s.id];
@@ -530,18 +536,18 @@ function renderStatus(results){
     return `<span class="s ${cls}"><b></b>${label}</span>`;
   }).join("");
 }
-
+ 
 /* ============================================================
    ORCHESTRATION
    ============================================================ */
 let lastArticles = [];
-
+ 
 async function refresh(){
   const btn = document.getElementById("refreshBtn");
   const label = btn.querySelector(".btn-label");
   document.body.classList.add("loading");
   btn.disabled = true; label.textContent = "Fetching…";
-
+ 
   const results = {};
   const settled = await Promise.all(SOURCES.map(async s=>{
     try{
@@ -554,18 +560,18 @@ async function refresh(){
     }
   }));
   renderStatus(results);
-
+ 
   lastArticles = settled.flat();
   draw();
-
+ 
   document.body.classList.remove("loading");
   btn.disabled = false; label.textContent = "Refresh front pages";
 }
-
+ 
 function draw(){
   const results = document.getElementById("results");
   const guardianOnly = document.getElementById("guardianOnly").checked;
-
+ 
   const anySucceeded = lastArticles.length > 0;
   if(!anySucceeded){
     results.innerHTML = `<div class="note"><b>No feeds came back this time.</b>
@@ -575,18 +581,18 @@ function draw(){
       block near the top of this file.</div>`;
     return;
   }
-
+ 
   let clusters = cluster(lastArticles);
   if(guardianOnly){
     clusters = clusters.filter(cl=> cl.sources.has("guardian"));
   }
-
+ 
   const totalStories = clusters.reduce((n,c)=>n+c.articles.length,0);
   const metaHtml = `<div class="meta">
       <span>${clusters.length} shared ${clusters.length===1?"story":"stories"} · ${totalStories} articles</span>
       <span>${new Date().toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"})}</span>
     </div>`;
-
+ 
   if(!clusters.length){
     results.innerHTML = metaHtml + `<div class="note"><b>No overlap right now.</b>
       None of the papers' front-page headlines share enough words to cluster
@@ -594,10 +600,10 @@ function draw(){
       each desk is chasing something different. Try again later.</div>`;
     return;
   }
-
+ 
   results.innerHTML = metaHtml + clusters.map(renderCluster).join("");
 }
-
+ 
 /* ---------- wire up ---------- */
 buildLegend();
 document.getElementById("refreshBtn").addEventListener("click", refresh);
@@ -606,3 +612,4 @@ refresh();  // load on first visit
 </script>
 </body>
 </html>
+    
