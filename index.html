@@ -252,6 +252,7 @@
 // Browsers can't fetch news RSS directly (no CORS headers), so we
 // route through a proxy. If both start failing, drop in another here.
 const PROXIES = [
+  url => "https://api.codetabs.com/v1/proxy/?quest=" + encodeURIComponent(url),
   url => "https://api.allorigins.win/raw?url=" + encodeURIComponent(url),
   url => "https://corsproxy.io/?url=" + encodeURIComponent(url),
 ];
@@ -306,18 +307,39 @@ function tokenize(title){
 /* ============================================================
    FETCH + PARSE
    ============================================================ */
-async function fetchText(url){
+// rss2json is CORS-native and returns clean JSON — the most reliable path,
+// so we try it first and only fall back to raw text proxies if it fails.
+const RSS2JSON = feed => "https://api.rss2json.com/v1/api.json?rss_url=" + encodeURIComponent(feed);
+
+async function fetchItems(feed){
+  // 1) primary: rss2json (handles CORS itself, no separate proxy needed)
+  try{
+    const r = await fetch(RSS2JSON(feed), {cache:"no-store"});
+    if(r.ok){
+      const j = await r.json();
+      if(j && j.status === "ok" && Array.isArray(j.items)){
+        const items = j.items
+          .map(it => ({ title:(it.title||"").trim(), link:(it.link||"").trim() }))
+          .filter(x => x.title && x.link);
+        if(items.length) return items;
+      }
+    }
+  }catch(e){ /* fall through to raw proxies */ }
+
+  // 2) fallback: raw CORS proxy + XML parsing, trying each proxy in turn
   let lastErr;
   for(const wrap of PROXIES){
     try{
-      const res = await fetch(wrap(url), {cache:"no-store"});
+      const res = await fetch(wrap(feed), {cache:"no-store"});
       if(!res.ok) throw new Error("HTTP "+res.status);
       const txt = await res.text();
-      if(txt && txt.length > 200) return txt;
-      throw new Error("empty");
+      if(!txt || txt.length < 200) throw new Error("empty");
+      const items = parseFeed(txt);
+      if(items.length) return items;
+      throw new Error("no items");
     }catch(e){ lastErr = e; }
   }
-  throw lastErr || new Error("all proxies failed");
+  throw lastErr || new Error("all fetch methods failed");
 }
 
 function parseFeed(xmlText){
@@ -346,7 +368,7 @@ async function loadSource(src){
   const out = [];
   for(const feed of src.feeds){
     try{
-      const items = parseFeed(await fetchText(feed));
+      const items = await fetchItems(feed);
       for(const it of items){
         const title = cleanTitle(it.title, src);
         if(!title || seen.has(it.link)) continue;
@@ -503,4 +525,84 @@ function escapeHtml(s){
 function renderStatus(results){
   document.getElementById("status").innerHTML = SOURCES.map(s=>{
     const r = results[s.id];
-    const cls = r.ok ? 
+    const cls = r.ok ? "ok" : "fail";
+    const label = r.ok ? `${s.short} ${r.count}` : `${s.short} —`;
+    return `<span class="s ${cls}"><b></b>${label}</span>`;
+  }).join("");
+}
+
+/* ============================================================
+   ORCHESTRATION
+   ============================================================ */
+let lastArticles = [];
+
+async function refresh(){
+  const btn = document.getElementById("refreshBtn");
+  const label = btn.querySelector(".btn-label");
+  document.body.classList.add("loading");
+  btn.disabled = true; label.textContent = "Fetching…";
+
+  const results = {};
+  const settled = await Promise.all(SOURCES.map(async s=>{
+    try{
+      const arts = await loadSource(s);
+      results[s.id] = {ok: arts.length>0, count: arts.length};
+      return arts;
+    }catch(e){
+      results[s.id] = {ok:false, count:0};
+      return [];
+    }
+  }));
+  renderStatus(results);
+
+  lastArticles = settled.flat();
+  draw();
+
+  document.body.classList.remove("loading");
+  btn.disabled = false; label.textContent = "Refresh front pages";
+}
+
+function draw(){
+  const results = document.getElementById("results");
+  const guardianOnly = document.getElementById("guardianOnly").checked;
+
+  const anySucceeded = lastArticles.length > 0;
+  if(!anySucceeded){
+    results.innerHTML = `<div class="note"><b>No feeds came back this time.</b>
+      The free relays this page depends on drop out intermittently — <b>tap Refresh once or
+      twice more</b> and it usually catches. If it keeps failing for a while, the relays are
+      having a bad day; try again later, or swap the ones listed in the <code>PROXIES</code>
+      block near the top of this file.</div>`;
+    return;
+  }
+
+  let clusters = cluster(lastArticles);
+  if(guardianOnly){
+    clusters = clusters.filter(cl=> cl.sources.has("guardian"));
+  }
+
+  const totalStories = clusters.reduce((n,c)=>n+c.articles.length,0);
+  const metaHtml = `<div class="meta">
+      <span>${clusters.length} shared ${clusters.length===1?"story":"stories"} · ${totalStories} articles</span>
+      <span>${new Date().toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"})}</span>
+    </div>`;
+
+  if(!clusters.length){
+    results.innerHTML = metaHtml + `<div class="note"><b>No overlap right now.</b>
+      None of the papers' front-page headlines share enough words to cluster
+      ${guardianOnly ? "with the Guardian" : ""}. That's normal on a quiet news day, or when
+      each desk is chasing something different. Try again later.</div>`;
+    return;
+  }
+
+  results.innerHTML = metaHtml + clusters.map(renderCluster).join("");
+}
+
+/* ---------- wire up ---------- */
+buildLegend();
+document.getElementById("refreshBtn").addEventListener("click", refresh);
+document.getElementById("guardianOnly").addEventListener("change", draw);
+refresh();  // load on first visit
+</script>
+</body>
+</html>
