@@ -21,8 +21,9 @@ h1 i{font-style:normal;color:var(--red)}
 .bar{display:flex;flex-wrap:wrap;align-items:center;gap:12px 28px;padding:12px 0;border-bottom:1px solid var(--line);font-size:14px}
 .grp{display:flex;align-items:center;gap:10px}
 .lbl{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.09em;color:var(--mute)}
-input[type=number]{width:62px;font:inherit;padding:5px 8px;border:1px solid #ccc;border-radius:4px}
-input[type=number]:focus{outline:2px solid var(--red);outline-offset:-1px;border-color:transparent}
+input[type=number],input[type=search]{width:62px;font:inherit;padding:5px 8px;border:1px solid #ccc;border-radius:4px}
+input[type=search]{width:170px}
+input[type=number]:focus,input[type=search]:focus{outline:2px solid var(--red);outline-offset:-1px;border-color:transparent}
 button{font:500 13px Roboto,sans-serif;text-transform:uppercase;letter-spacing:.06em;background:var(--red);color:#fff;border:0;border-radius:4px;padding:8px 14px;cursor:pointer}
 button:hover{background:#b00f14}
 button:disabled{opacity:.6;cursor:wait}
@@ -55,6 +56,7 @@ details.seen .meta::before{content:"● ";color:var(--red)}
 .body img{width:100%;aspect-ratio:16/9;object-fit:cover;display:block;margin-bottom:12px;background:#f2f2f2}
 .body p{margin:0 0 .8em;font-size:15px;font-weight:300}
 .body a{color:var(--red);font-weight:500;font-size:13px;text-decoration:none;text-transform:uppercase;letter-spacing:.06em}
+mark{background:#fde2e3;color:inherit;padding:0 1px;border-radius:2px}
 .empty{color:var(--mute);font-size:14px;padding:14px 0}
 .status{padding:40px 16px;color:var(--mute);text-align:center}
 </style>
@@ -67,6 +69,7 @@ details.seen .meta::before{content:"● ";color:var(--red)}
   </div>
   <div class="bar">
     <div class="grp">
+      <input id="q" type="search" placeholder="Search…" aria-label="Search articles" autocomplete="off">
       <span class="lbl">Articles</span>
       <input id="n" type="number" min="3" max="60" step="1" value="9">
       <button id="go">Re-search</button>
@@ -130,14 +133,23 @@ function el(tag, cls, text){
   return e;
 }
 
-function article(a){
+function hl(text, terms){
+  const f = document.createDocumentFragment();
+  if (!terms.length) { f.append(text); return f; }
+  const re = new RegExp('(' + terms.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')', 'gi');
+  text.split(re).forEach((part, i) => f.append(i % 2 ? el('mark', '', part) : part));
+  return f;
+}
+
+function article(a, terms){
   const d = el('details');
   if (opened.has(a.url)) d.classList.add('seen');
   const s = el('summary');
   const meta = el('div', 'meta', a.source);
   meta.append(el('span', 'tm', ago(a.date)));
-  s.append(meta, el('h3', '', a.title));
-  if (a.summary) s.append(el('p', 'dek', a.summary));
+  const h = el('h3'); h.append(hl(a.title, terms));
+  s.append(meta, h);
+  if (a.summary) { const p = el('p', 'dek'); p.append(hl(a.summary, terms)); s.append(p); }
   d.append(s);
   d.addEventListener('toggle', () => {
     if (!d.open) return;
@@ -150,7 +162,7 @@ function article(a){
         img.src = a.image;
         b.append(img);
       }
-      a.body.forEach(p => b.append(el('p', '', p)));
+      a.body.forEach(t => { const p = el('p'); p.append(hl(t, terms)); b.append(p); });
       const link = el('a', '', 'Read at ' + a.source + ' →');
       link.href = a.url; link.target = '_blank'; link.rel = 'noopener';
       b.append(link);
@@ -164,31 +176,47 @@ function article(a){
 function render(){
   const total = Math.max(1, Math.min(60, Math.round(+$('n').value) || 9));
   const mode = +$('t').value;
+  const terms = $('q').value.toLowerCase().split(/\s+/).filter(Boolean);
   document.querySelectorAll('.ticks span').forEach(s => s.classList.toggle('on', +s.dataset.v === mode));
   const base = Math.floor(total / 3), extra = total % 3;
   let tMuted = 0, rMuted = 0;
-  const main = $('main');
-  main.replaceChildren();
-  SOURCES.forEach(([key, name], i) => {
-    const want = base + (i < extra ? 1 : 0);
+  const cols = SOURCES.map(([key, name], i) => {
     const pool = data.filter(a => a.source === key);
     const unread = pool.filter(a => !muted.has(a.url));
     rMuted += pool.length - unread.length;
     const pass = unread.filter(a => trumpLevel(a) <= mode);
     tMuted += unread.length - pass.length;
+    return { key, name, pool, pass, want: base + (i < extra ? 1 : 0) };
+  });
+
+  // Searching: take the newest `total` matches from all sources, then show each in its own column
+  let hits = [];
+  if (terms.length) {
+    const text = a => a._s ??= (a.title + ' ' + (a.summary || '') + ' ' + a.body.join(' ')).toLowerCase();
+    hits = cols.flatMap(c => c.pass).filter(a => terms.every(t => text(a).includes(t)));
+    const top = new Set([...hits].sort((x, y) => new Date(y.date) - new Date(x.date)).slice(0, total));
+    cols.forEach(c => { c.matches = c.pass.filter(a => hits.includes(a)).length; c.shown = c.pass.filter(a => top.has(a)); });
+  } else {
+    cols.forEach(c => c.shown = c.pass.slice(0, c.want));
+  }
+
+  const main = $('main');
+  main.replaceChildren();
+  cols.forEach(c => {
     const sec = el('section');
-    const h = el('h2', '', name);
-    h.append(el('small', '', pass.length > want ? (pass.length - want) + ' queued' : ''));
+    const h = el('h2', '', c.name);
+    const extraN = terms.length ? c.matches : c.pass.length - c.want;
+    h.append(el('small', '', terms.length ? `${c.matches} match${c.matches === 1 ? '' : 'es'}` : extraN > 0 ? extraN + ' queued' : ''));
     sec.append(h);
-    const shown = pass.slice(0, want);
-    shown.forEach(a => sec.append(article(a)));
-    if (want && !shown.length) sec.append(el('div', 'empty', !pool.length
-      ? `Couldn’t fetch ${name} on the last update — it’ll retry within 30 minutes.`
+    c.shown.forEach(a => sec.append(article(a, terms)));
+    if (!c.shown.length && (c.want || terms.length)) sec.append(el('div', 'empty',
+      terms.length ? (c.matches ? 'More matches here — raise the article count.' : 'No matches.')
+      : !c.pool.length ? `Couldn’t fetch ${c.name} on the last update — it’ll retry within 30 minutes.`
       : 'All read or filtered — loosen the T filter, reset read, or wait for the next update.'));
     main.append(sec);
   });
   const c = $('count');
-  c.innerHTML = `<b>${tMuted}</b> T-muted · <b>${rMuted}</b> read`;
+  c.innerHTML = (terms.length ? `<b>${hits.length}</b> found · ` : '') + `<b>${tMuted}</b> T-muted · <b>${rMuted}</b> read`;
   c.title = `${tMuted} hidden by the Trump filter, ${rMuted} read and muted`;
 }
 
@@ -217,6 +245,7 @@ $('go').onclick = async () => {
   btn.disabled = false; btn.textContent = 'Re-search';
 };
 $('reset').onclick = () => { muted.clear(); opened.clear(); save(); render(); };
+$('q').addEventListener('input', render);
 $('n').addEventListener('change', () => { save(); render(); });
 $('t').addEventListener('input', () => { save(); render(); });
 document.querySelectorAll('.ticks span').forEach(s => s.onclick = () => { $('t').value = s.dataset.v; save(); render(); });
