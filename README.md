@@ -1,6 +1,6 @@
 # Common Ground
 
-A Trump-free world-news front page built from AP, BBC and Guardian world news.
+A Trump-free world-news front page built from NPR, BBC and Guardian world news.
 
 ## Setup
 
@@ -12,9 +12,9 @@ A Trump-free world-news front page built from AP, BBC and Guardian world news.
 
 ## How it works
 
-- The Action scrapes AP's world page, reads BBC's world RSS feed, and calls the Guardian API, then writes `news.json`.
+- The Action reads NPR's and BBC's world RSS feeds (fetching each article page for the text) and calls the Guardian API (falling back to its RSS feed), then writes `news.json`.
 - The page reads `news.json`. Opening an article marks it as read; **Re-search** mutes the read ones and fills their slots with the next in line.
 - **T-off** hides anything mentioning Trump. **T-mid** allows passing mentions in the body (not in the headline or standfirst, not in the first paragraph, three mentions at most). **T-on** shows everything.
 - Read state, article count and filter setting are kept in your browser.
 
-If AP changes its page layout, the AP column keeps the last good set until the selector in `scripts/fetch-news.mjs` is updated.
+If a source fails, its column keeps the last good set. `news.json` has a `status` note per source saying what happened on the last run.

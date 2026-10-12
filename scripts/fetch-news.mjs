@@ -1,4 +1,4 @@
-// Fetches world news from AP, BBC and the Guardian into news.json.
+// Fetches world news from NPR, BBC and the Guardian into news.json.
 // Run by .github/workflows/news.yml every 30 minutes.
 import { load } from 'cheerio';
 import { readFile, writeFile } from 'node:fs/promises';
@@ -78,7 +78,7 @@ async function article(url, source, selectors, hint = {}) {
   if (!body.length) throw new Error(`no body text ${url}`);
   return {
     source, url,
-    title: clean(hint.title || meta($, 'og:title') || $('h1').first().text()).replace(/\s+[-|]\s+(AP News|BBC News|The Guardian)$/, ''),
+    title: clean(hint.title || meta($, 'og:title') || $('h1').first().text()).replace(/\s+[-|:]\s+(NPR|BBC News|The Guardian)$/, ''),
     summary: clean(hint.summary || meta($, 'og:description')),
     image: hint.image || meta($, 'og:image'),
     date: hint.date || iso(meta($, 'article:published_time') || j.datePublished),
@@ -102,19 +102,32 @@ function rss(xml) {
   }).get();
 }
 
-async function ap() {
-  const sel = ['.RichTextStoryBody p', '.RichTextBody p', '.Article p', 'article p'];
-  let links = [];
-  for (const page of ['https://apnews.com/world-news', 'https://apnews.com/hub/world-news']) {
+async function npr() {
+  const $f = load(await get('https://feeds.npr.org/1004/rss.xml'), { xmlMode: true });
+  const items = rss($f.xml()).filter(i => /npr\.org\//.test(i.url)).slice(0, PER_SOURCE);
+  const full = {}; // some NPR feed items carry the whole story in content:encoded
+  $f('item').each((_, it) => {
+    const html = $f(it).find('content\\:encoded').text();
+    if (html) full[clean($f(it).find('link').first().text()).split('?')[0]] = html;
+  });
+  status.NPR = `${items.length} feed items`;
+  const sel = ['#storytext > p', '.storytext p', 'article p'];
+  return pool(items, 5, async i => {
+    if (prev[i.url]?.body?.length) return prev[i.url];
+    if (full[i.url]) {
+      const $ = load(full[i.url]);
+      const body = $('p').map((_, e) => clean($(e).text())).get().filter(t => t.length > 30).slice(0, 60);
+      if (body.length >= 3) return { source: 'NPR', ...i, image: i.image || $('img').first().attr('src') || '', body };
+    }
     try {
-      const $ = load(await get(page));
-      links = [...new Set($('a[href*="/article/"]').map((_, a) => $(a).attr('href')).get()
-        .map(h => new URL(h, 'https://apnews.com').href.split(/[?#]/)[0]))].slice(0, PER_SOURCE);
-      status.AP = `${links.length} links from ${page}`;
-      if (links.length) break;
-    } catch (e) { status.AP = e.message; }
-  }
-  return pool(links, 5, url => article(url, 'AP', sel));
+      return await article(i.url, 'NPR', sel, { ...i, image: i.image || '' });
+    } catch (e) {
+      const id = (i.url.match(/\/(nx-s1-\d+|\d{9,})\//) || [])[1];
+      if (!id) throw e;
+      const a = await article(`https://text.npr.org/${id}`, 'NPR', ['.paragraphs-container p', 'article p'], i);
+      return { ...a, url: i.url };
+    }
+  });
 }
 
 async function bbc() {
@@ -165,7 +178,7 @@ async function guardian() {
 }
 
 const articles = [];
-for (const [name, fn] of Object.entries({ AP: ap, BBC: bbc, Guardian: guardian })) {
+for (const [name, fn] of Object.entries({ NPR: npr, BBC: bbc, Guardian: guardian })) {
   let got = [];
   try { got = await fn(); } catch (e) { status[name] = (status[name] ? status[name] + ' · ' : '') + e.message; }
   if (!got.length) {

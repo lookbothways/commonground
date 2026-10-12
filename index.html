@@ -83,7 +83,7 @@ details.seen .meta::before{content:"● ";color:var(--red)}
 <main id="main"><div class="status">Loading…</div></main>
 
 <script>
-const SOURCES = [['AP','Associated Press'],['BBC','BBC News'],['Guardian','The Guardian']];
+const SOURCES = [['NPR','NPR'],['BBC','BBC News'],['Guardian','The Guardian']];
 const $ = id => document.getElementById(id);
 const store = {
   get(k, d){ try { const v = localStorage.getItem('cg.'+k); return v == null ? d : JSON.parse(v); } catch { return d; } },
@@ -181,7 +181,9 @@ function render(){
     sec.append(h);
     const shown = pass.slice(0, want);
     shown.forEach(a => sec.append(article(a)));
-    if (want && !shown.length) sec.append(el('div', 'empty', 'Nothing left here — loosen the T filter or wait for the next update.'));
+    if (want && !shown.length) sec.append(el('div', 'empty', !pool.length
+      ? `Couldn’t fetch ${name} on the last update — it’ll retry within 30 minutes.`
+      : 'All read or filtered — loosen the T filter, reset read, or wait for the next update.'));
     main.append(sec);
   });
   const c = $('count');
